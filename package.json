@@ -2,6 +2,7 @@
   "name": "qcm-trainer",
   "private": true,
   "version": "0.0.0",
+  "homepage": "https://romy-dev.github.io/QCM/",
   "type": "module",
   "scripts": {
     "dev": "vite",
