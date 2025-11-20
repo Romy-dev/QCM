@@ -23,8 +23,8 @@ type CsvSource = {
 }
 
 const CSV_SOURCES: CsvSource[] = [
-  { path: '/qcm_genie_logiciel_520.csv', label: 'lot520' },
-  { path: '/qcm_genie_logiciel_plus_2500.csv', label: 'lot2500' },
+  { path: '/qcm_genie_logiciel_520_final.csv', label: 'lot520' },
+  { path: '/qcm_genie_logiciel_plus_2500_final.csv', label: 'lot2500' },
 ]
 const OPTION_MAP: Record<OptionKey, 'option_a' | 'option_b' | 'option_c' | 'option_d'> = {
   A: 'option_a',
@@ -44,12 +44,15 @@ function App() {
   const [difficultyFilter, setDifficultyFilter] = useState('Tous')
   const [questionPoolSize, setQuestionPoolSize] = useState(20)
   const [shuffleQuestions, setShuffleQuestions] = useState(true)
+  const [excludeAnswered, setExcludeAnswered] = useState(true)
 
   const [currentIndex, setCurrentIndex] = useState(0)
   const [selectedOption, setSelectedOption] = useState<OptionKey | null>(null)
   const [showAnswer, setShowAnswer] = useState(false)
   const [answered, setAnswered] = useState(0)
   const [score, setScore] = useState(0)
+  const [answeredQuestionIds, setAnsweredQuestionIds] = useState<Set<string>>(new Set())
+  const [shuffledOptions, setShuffledOptions] = useState<OptionKey[]>(['A', 'B', 'C', 'D'])
 
   useEffect(() => {
     let isCancelled = false
@@ -144,6 +147,11 @@ function App() {
     [questions],
   )
 
+  const shuffleOptionsForQuestion = useCallback(() => {
+    const options: OptionKey[] = ['A', 'B', 'C', 'D']
+    setShuffledOptions([...options].sort(() => Math.random() - 0.5))
+  }, [])
+
   const rebuildSession = useCallback(() => {
     if (!questions.length) {
       setSessionQuestions([])
@@ -159,7 +167,8 @@ function App() {
         !normalizedSearch ||
         q.question.toLowerCase().includes(normalizedSearch) ||
         q.explanation.toLowerCase().includes(normalizedSearch)
-      return matchesTopic && matchesDifficulty && matchesSearch
+      const notAnswered = !excludeAnswered || !answeredQuestionIds.has(q.id)
+      return matchesTopic && matchesDifficulty && matchesSearch && notAnswered
     })
 
     if (!filtered.length) {
@@ -193,11 +202,14 @@ function App() {
     difficultyFilter,
     questionPoolSize,
     shuffleQuestions,
+    excludeAnswered,
+    answeredQuestionIds,
   ])
 
   useEffect(() => {
     rebuildSession()
-  }, [rebuildSession])
+    shuffleOptionsForQuestion()
+  }, [rebuildSession, shuffleOptionsForQuestion])
 
   const currentQuestion = sessionQuestions[currentIndex] ?? null
   const accuracy = answered ? Math.round((score / answered) * 100) : 0
@@ -214,6 +226,8 @@ function App() {
     if (isCorrect) {
       setScore((prev) => prev + 1)
     }
+    // Marquer la question comme répondue
+    setAnsweredQuestionIds((prev) => new Set(prev).add(currentQuestion.id))
   }
 
   const handleNext = () => {
@@ -223,6 +237,7 @@ function App() {
     )
     setSelectedOption(null)
     setShowAnswer(false)
+    shuffleOptionsForQuestion()
   }
 
   const handlePrevious = () => {
@@ -232,11 +247,25 @@ function App() {
     )
     setSelectedOption(null)
     setShowAnswer(false)
+    shuffleOptionsForQuestion()
   }
 
   const handleRestart = () => {
     rebuildSession()
+    shuffleOptionsForQuestion()
   }
+
+  const handleResetProgress = () => {
+    setAnsweredQuestionIds(new Set())
+    setAnswered(0)
+    setScore(0)
+    rebuildSession()
+    shuffleOptionsForQuestion()
+  }
+
+  const unansweredCount = useMemo(() => {
+    return questions.filter((q) => !answeredQuestionIds.has(q.id)).length
+  }, [questions, answeredQuestionIds])
 
   const stats = useMemo(
     () => ({
@@ -281,6 +310,10 @@ function App() {
         <div className="stat-card">
           <span>Avancement</span>
           <strong>{completion}%</strong>
+        </div>
+        <div className="stat-card">
+          <span>Non répondues</span>
+          <strong>{unansweredCount}</strong>
         </div>
       </section>
 
@@ -352,8 +385,22 @@ function App() {
             />
             <span>Mélanger la session</span>
           </label>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={excludeAnswered}
+              onChange={(event) => setExcludeAnswered(event.target.checked)}
+            />
+            <span>Exclure questions répondues</span>
+          </label>
+        </div>
+
+        <div className="control-row">
           <button className="ghost" onClick={handleRestart}>
             Relancer la session
+          </button>
+          <button className="ghost" onClick={handleResetProgress}>
+            Réinitialiser progression
           </button>
         </div>
       </section>
@@ -379,8 +426,9 @@ function App() {
             <h2>{currentQuestion.question}</h2>
 
             <div className="options-list">
-              {(Object.keys(OPTION_MAP) as OptionKey[]).map((option) => {
+              {shuffledOptions.map((option, index) => {
                 const optionText = currentQuestion[OPTION_MAP[option]]
+                const displayLabel = String.fromCharCode(65 + index) // A, B, C, D
                 const isSelected = selectedOption === option
                 const isCorrect =
                   showAnswer && option === currentQuestion.correct_option
@@ -403,7 +451,7 @@ function App() {
                     onClick={() => handleAnswer(option)}
                     disabled={showAnswer}
                   >
-                    <span className="option-key">{option}</span>
+                    <span className="option-key">{displayLabel}</span>
                     <span>{optionText}</span>
                   </button>
                 )
